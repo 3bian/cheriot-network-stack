@@ -203,6 +203,26 @@ void __cheri_compartment("Firewall")
 void __cheri_compartment("Firewall")
   firewall_remove_tcpipv4_server_port(uint16_t localPort);
 
+/**
+ * Register a local UDP port as a server port in the firewall.
+ *
+ * Any incoming UDP packet to that port will trigger the creation of a hole
+ * in the firewall for UDP packets to and from the given local server port.
+ *
+ * This should be called only by the NetAPI compartment.
+ */
+void __cheri_compartment("Firewall")
+  firewall_add_udpipv4_server_port(uint16_t localPort);
+
+/**
+ * Remove a local UDP server port from the firewall.
+ *
+ * This is called from the TCP/IP compartment when a UDP "connection" is
+ * closed on a server port.
+ */
+void __cheri_compartment("Firewall")
+  firewall_remove_udpipv4_server_port(uint16_t localPort);
+
 #if CHERIOT_RTOS_OPTION_IPv6
 /**
  * Open a hole in the firewall for TCP packets to and from the given endpoint.
@@ -295,6 +315,26 @@ void __cheri_compartment("Firewall")
 void __cheri_compartment("Firewall")
   firewall_remove_tcpipv6_server_port(uint16_t localPort);
 
+/**
+ * Register a local UDP port as a server port in the firewall for IPv6.
+ *
+ * Any incoming UDP packet to that port will trigger the creation of a hole
+ * in the firewall for UDP packets to and from the given local server port.
+ *
+ * This should be called only by the NetAPI compartment.
+ */
+void __cheri_compartment("Firewall")
+  firewall_add_udpipv6_server_port(uint16_t localPort);
+
+/**
+ * Remove a local UDP server port from the firewall for IPv6.
+ *
+ * This is called from the TCP/IP compartment when a UDP "connection" is
+ * closed on a server port.
+ */
+void __cheri_compartment("Firewall")
+  firewall_remove_udpipv6_server_port(uint16_t localPort);
+
 #else
 __always_inline static inline void
 firewall_add_tcpipv6_endpoint(uint8_t *remoteAddress,
@@ -352,6 +392,20 @@ firewall_add_tcpipv6_server_port(uint16_t localPort)
 
 __always_inline static inline void
 firewall_remove_tcpipv6_server_port(uint16_t localPort)
+{
+	Debug::Assert(
+	  false, "{} not supported with IPv6 disabled", __PRETTY_FUNCTION__);
+}
+
+__always_inline static inline void
+firewall_add_udpipv6_server_port(uint16_t localPort)
+{
+	Debug::Assert(
+	  false, "{} not supported with IPv6 disabled", __PRETTY_FUNCTION__);
+}
+
+__always_inline static inline void
+firewall_remove_udpipv6_server_port(uint16_t localPort)
 {
 	Debug::Assert(
 	  false, "{} not supported with IPv6 disabled", __PRETTY_FUNCTION__);

@@ -4,7 +4,7 @@
 #include <atomic>
 #include <compartment-macros.h>
 #include <debug.hh>
-//#include <fail-simulator-on-error.h>
+// #include <fail-simulator-on-error.h>
 #include <endianness.hh>
 #include <locks.hh>
 #include <platform-entropy.hh>
@@ -469,6 +469,7 @@ namespace
 			auto operator<=>(const ConnectionTuple &) const = default; // NOLINT
 		};
 		SmallTable<uint16_t>        tcpServerPorts;
+		SmallTable<uint16_t>        udpServerPorts;
 		SmallTable<ConnectionTuple> permittedTCPEndpoints;
 		SmallTable<ConnectionTuple> permittedUDPEndpoints;
 		FlagLockPriorityInherited   permittedEndpointsLock;
@@ -525,16 +526,34 @@ namespace
 			tcpServerPorts.insert(localPort);
 		}
 
+		void add_udp_server_port(uint16_t localPort)
+		{
+			LockGuard g{permittedEndpointsLock};
+			udpServerPorts.insert(localPort);
+		}
+
 		void remove_server_port(uint16_t localPort)
 		{
 			LockGuard g{permittedEndpointsLock};
 			tcpServerPorts.remove(localPort);
 		}
 
+		void remove_udp_server_port(uint16_t localPort)
+		{
+			LockGuard g{permittedEndpointsLock};
+			udpServerPorts.remove(localPort);
+		}
+
 		bool is_server_port(uint16_t localPort)
 		{
 			LockGuard g{permittedEndpointsLock};
 			return tcpServerPorts.contains(localPort);
+		}
+
+		bool is_udp_server_port(uint16_t localPort)
+		{
+			LockGuard g{permittedEndpointsLock};
+			return udpServerPorts.contains(localPort);
 		}
 
 		void add_endpoint(IPProtocolNumber protocol,
@@ -652,6 +671,17 @@ namespace
 				           ipv4Header->protocol);
 				return ForwardFlags::Discard;
 			case IPProtocolNumber::UDP:
+			{
+				// Look at the TCP/UDP common header. This
+				// allows us to inspect UDP packets as well
+				// here. We'll do this again later.
+				auto *tcpudpHeader =
+				  reinterpret_cast<const TCPUDPCommonPrefix *>(
+				    data + ipv4Header->body_offset());
+				uint32_t endpoint         = ipv4Header->*remoteAddress;
+				uint16_t localPortNumber  = tcpudpHeader->*localPort;
+				uint16_t remotePortNumber = tcpudpHeader->*remotePort;
+				bool isIngress = (remoteAddress == &IPv4Header::sourceAddress);
 				if (permitBroadcast)
 				{
 					if (ipv4Header->*remoteAddress == 0xffffffff)
@@ -660,10 +690,21 @@ namespace
 						return ForwardFlags::ForwardNetworkStack;
 					}
 				}
+
+				if ((isIngress) &&
+				    EndpointsTable<uint32_t>::instance().is_udp_server_port(
+				      ntohs(localPortNumber)))
+				{
+					Debug::log("Permitting UDP server port {}",
+					           ntohs(localPortNumber));
+					return ForwardFlags::ForwardNetworkStack;
+				}
+
 				// Process the rest of UDP packets in the TCP
 				// case (for DNS we need to inspect the port,
 				// and inspecting it here would duplicate a lot
 				// of code).
+			}
 				[[fallthrough]];
 			case IPProtocolNumber::TCP:
 			{
@@ -998,6 +1039,16 @@ void firewall_remove_tcpipv4_server_port(uint16_t localPort)
 	EndpointsTable<uint32_t>::instance().remove_server_port(localPort);
 }
 
+void firewall_add_udpipv4_server_port(uint16_t localPort)
+{
+	EndpointsTable<uint32_t>::instance().add_udp_server_port(localPort);
+}
+
+void firewall_remove_udpipv4_server_port(uint16_t localPort)
+{
+	EndpointsTable<uint32_t>::instance().remove_udp_server_port(localPort);
+}
+
 void firewall_add_tcpipv4_endpoint(uint32_t remoteAddress,
                                    uint16_t localPort,
                                    uint16_t remotePort)
@@ -1080,6 +1131,16 @@ void firewall_add_tcpipv6_server_port(uint16_t localPort)
 void firewall_remove_tcpipv6_server_port(uint16_t localPort)
 {
 	EndpointsTable<IPv6Address>::instance().remove_server_port(localPort);
+}
+
+void firewall_add_udpipv6_server_port(uint16_t localPort) // NEW
+{
+	EndpointsTable<IPv6Address>::instance().add_udp_server_port(localPort);
+}
+
+void firewall_remove_udpipv6_server_port(uint16_t localPort) // NEW
+{
+	EndpointsTable<IPv6Address>::instance().remove_udp_server_port(localPort);
 }
 
 void firewall_add_tcpipv6_endpoint(uint8_t *remoteAddress,
